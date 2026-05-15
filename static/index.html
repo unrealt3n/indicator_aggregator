@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Real-time BTC trend prediction dashboard using 25 market indicators across multiple timeframes.">
+  <title>BTC Trend Predictor — Multi-Timeframe Dashboard</title>
+  <link rel="stylesheet" href="/static/index.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
+</head>
+<body>
+
+  <!-- Loading Overlay -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-spinner"></div>
+    <p class="loading-text">Fetching 25 market indicators…</p>
+  </div>
+
+  <!-- Refresh Progress Bar -->
+  <div class="refresh-bar" id="refreshBar" style="width: 0%"></div>
+
+  <div class="dashboard" id="dashboard" style="display:none;">
+
+    <!-- Header -->
+    <header class="header" id="header">
+      <div class="header__brand">
+        <div class="header__logo">₿</div>
+        <div>
+          <div class="header__title">BTC Trend Predictor</div>
+          <div class="header__subtitle">25 Indicators · Multi-Timeframe</div>
+        </div>
+      </div>
+      <div class="header__price">
+        <div class="header__price-value" id="headerPrice">—</div>
+        <div class="header__price-change" id="headerChange">—</div>
+      </div>
+      <div class="header__meta">
+        <span class="session-badge" id="sessionBadge">—</span>
+        <span id="lastUpdated">—</span>
+      </div>
+    </header>
+
+    <!-- Timeframe Tabs -->
+    <div class="timeframe-tabs" id="timeframeTabs"></div>
+
+    <!-- Prediction Hero Card -->
+    <section class="prediction-hero" id="predictionHero">
+      <div class="hero-content">
+        <div class="hero-stats">
+          <div class="hero-stat">
+            <div class="hero-stat__label">Composite Score</div>
+            <div class="hero-stat__value" id="heroScore">—</div>
+          </div>
+          <div class="hero-stat">
+            <div class="hero-stat__label">Est. Move</div>
+            <div class="hero-stat__value small" id="heroMove">—</div>
+          </div>
+        </div>
+
+        <div class="hero-direction">
+          <div class="hero-direction__arrow" id="heroArrow">—</div>
+          <div class="hero-direction__label" id="heroLabel">Loading</div>
+        </div>
+
+        <div class="gauge-container">
+          <svg class="gauge-svg" viewBox="0 0 160 90">
+            <path class="gauge-bg" d="M 15 80 A 65 65 0 0 1 145 80" />
+            <path class="gauge-fill" id="gaugeFill" d="M 15 80 A 65 65 0 0 1 145 80"
+                  stroke-dasharray="204" stroke-dashoffset="204" />
+            <text class="gauge-text" x="80" y="72" id="gaugeText">—</text>
+            <text class="gauge-label-text" x="80" y="86">Confidence</text>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Price Range -->
+      <div class="range-bar" id="rangeBar">
+        <div class="range-bar__labels">
+          <span id="rangeLow">—</span>
+          <span style="color: var(--text-primary); font-weight:600;" id="rangeCurrentLabel">Current</span>
+          <span id="rangeHigh">—</span>
+        </div>
+        <div class="range-bar__track">
+          <div class="range-bar__fill" id="rangeFill"></div>
+          <div class="range-bar__marker" id="rangeMarker"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Indicator Groups -->
+    <div class="groups-grid" id="groupsGrid"></div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      Data: Binance · Alternative.me · Yahoo Finance · FRED · Farside Investors<br>
+      Auto-refresh every 5 minutes · Not financial advice
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,279 @@
+# BTC Trend Predictor — Hosting Guide
+
+## ✅ Project Status: Ready to Deploy
+
+The project is **fully ready**. Here's the audit summary:
+
+| Layer | Files | Status |
+|---|---|---|
+| **Entry Point** | `app.py` | ✅ Flask app with CORS, static serving |
+| **Config** | `config.py` | ✅ All API endpoints, weights, FRED key present |
+| **Data Layer** | `binance_client.py`, `macro_client.py`, `scraper_client.py`, `cache.py` | ✅ All clients with caching & error handling |
+| **Domain Layer** | `models.py`, `indicators.py`, `prediction.py` | ✅ 25 indicators, scoring engine, composite prediction |
+| **Presentation** | `routes.py`, `serializers.py` | ✅ REST API with graceful error handling |
+| **Frontend** | `index.html`, `index.css`, `app.js` | ✅ Premium dark UI, responsive, auto-refresh |
+| **Dependencies** | `requirements.txt` | ✅ 7 packages, all pinned |
+
+> [!IMPORTANT]
+> Before deploying, disable debug mode. In `config.py`, change `DEBUG = True` to `DEBUG = False`.
+
+---
+
+## Option 1: Render (Recommended — Easiest Free Hosting)
+
+[Render](https://render.com) offers a free tier for Python web services.
+
+### Steps
+
+1. **Push your code to GitHub**
+   ```bash
+   cd d:\codes\python
+   git init
+   git add .
+   git commit -m "Initial commit"
+   # Create a repo on github.com, then:
+   git remote add origin https://github.com/YOUR_USERNAME/btc-trend-predictor.git
+   git branch -M main
+   git push -u origin main
+   ```
+
+2. **Create a `Procfile`** in the project root (no file extension):
+   ```
+   web: gunicorn app:app --bind 0.0.0.0:$PORT
+   ```
+
+3. **Add `gunicorn` to `requirements.txt`**:
+   ```
+   flask==3.1.1
+   flask-cors==5.0.1
+   requests==2.32.3
+   yfinance==0.2.54
+   beautifulsoup4==4.13.4
+   numpy==2.2.5
+   lxml==5.4.0
+   gunicorn==23.0.0
+   ```
+
+4. **Sign up at [render.com](https://render.com)** (free with GitHub)
+
+5. **Create a New Web Service**:
+   - Connect your GitHub repo
+   - **Runtime**: Python
+   - **Build Command**: `pip install -r requirements.txt`
+   - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT`
+   - **Instance Type**: Free
+
+6. **Deploy** — Render auto-builds and gives you a URL like `https://btc-trend-predictor.onrender.com`
+
+> [!NOTE]
+> Free Render instances spin down after 15 minutes of inactivity. First load after idle takes ~30 seconds.
+
+---
+
+## Option 2: Railway
+
+[Railway](https://railway.app) has a free trial with $5/month credit.
+
+### Steps
+
+1. Push code to GitHub (same as above)
+2. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub**
+3. Railway auto-detects Python and uses `Procfile`
+4. Add same `Procfile` and `gunicorn` as above
+5. Done — you get a public URL automatically
+
+---
+
+## Option 3: Koyeb
+
+[Koyeb](https://www.koyeb.com) offers a free tier with always-on instances (no cold starts).
+
+### Steps
+
+1. Push code to GitHub
+2. Sign up at [koyeb.com](https://www.koyeb.com)
+3. **Create App** → **GitHub** → Select your repo
+4. **Builder**: Buildpack
+5. **Run command**: `gunicorn app:app --bind 0.0.0.0:$PORT`
+6. **Instance**: Free (Eco)
+7. Deploy
+
+---
+
+## Option 4: PythonAnywhere
+
+[PythonAnywhere](https://www.pythonanywhere.com) — free tier with a persistent web app.
+
+### Steps
+
+1. Sign up at [pythonanywhere.com](https://www.pythonanywhere.com) (free account)
+2. Open a **Bash console** and clone your repo:
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/btc-trend-predictor.git
+   ```
+3. Create a virtualenv:
+   ```bash
+   mkvirtualenv btcenv --python=python3.10
+   pip install -r btc-trend-predictor/requirements.txt
+   ```
+4. Go to the **Web** tab → **Add a new web app**
+   - Choose **Flask** → Python 3.10
+   - Set **Source code** to `/home/YOUR_USERNAME/btc-trend-predictor`
+   - Set **WSGI file** to point to your app:
+     ```python
+     import sys
+     sys.path.insert(0, '/home/YOUR_USERNAME/btc-trend-predictor')
+     from app import app as application
+     ```
+5. Set **Virtualenv** to `/home/YOUR_USERNAME/.virtualenvs/btcenv`
+6. Click **Reload** → Your app is live at `YOUR_USERNAME.pythonanywhere.com`
+
+> [!WARNING]
+> Free PythonAnywhere accounts can only access a whitelist of external sites. Binance API and yfinance may be **blocked** on free tier. This option works best with a paid account ($5/month).
+
+---
+
+## Option 5: Android Termux (Self-Hosting on Your Phone)
+
+This turns your Android phone into a server running 24/7.
+
+### Prerequisites
+- Install [Termux from F-Droid](https://f-droid.org/en/packages/com.termux/) (NOT the Play Store version — it's outdated)
+- Stable WiFi or hotspot
+
+### Step-by-Step
+
+```bash
+# 1. Update Termux packages
+pkg update && pkg upgrade -y
+
+# 2. Install Python and Git
+pkg install python git -y
+
+# 3. Install required build dependencies (for numpy, lxml)
+pkg install build-essential libxml2 libxslt -y
+
+# 4. Clone your project (or transfer it)
+git clone https://github.com/YOUR_USERNAME/btc-trend-predictor.git
+cd btc-trend-predictor
+
+# 5. Create a virtual environment
+python -m venv venv
+source venv/bin/activate
+
+# 6. Install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# 7. Run the app
+python app.py
+```
+
+Your app will be running at `http://localhost:5000` on the phone.
+
+### Access from Other Devices on the Same WiFi
+
+1. Find your phone's IP address:
+   ```bash
+   ifconfig | grep inet
+   ```
+   Look for something like `192.168.x.x`
+
+2. Access the dashboard from any browser on your network:
+   ```
+   http://192.168.x.x:5000
+   ```
+
+> [!TIP]
+> The app already binds to `0.0.0.0` in `config.py`, so it's accessible from other devices on the same network by default.
+
+### Keep It Running in Background
+
+```bash
+# Install tmux to keep the server running after closing Termux
+pkg install tmux -y
+
+# Start a tmux session
+tmux new -s btc
+
+# Inside tmux, activate venv and run
+source venv/bin/activate
+python app.py
+
+# Detach from tmux: press Ctrl+B, then D
+# The server keeps running in the background
+
+# Re-attach later:
+tmux attach -t btc
+```
+
+### Prevent Android from Killing Termux
+
+1. **Disable battery optimization** for Termux:
+   - Settings → Apps → Termux → Battery → Unrestricted
+2. **Acquire a Termux wake lock** (prevents CPU sleep):
+   ```bash
+   termux-wake-lock
+   ```
+3. **Lock Termux in recent apps**: Open recent apps, tap the Termux icon → Lock
+
+### Auto-Start on Boot (Optional)
+
+Install `Termux:Boot` from F-Droid:
+```bash
+# Create the boot script directory
+mkdir -p ~/.termux/boot
+
+# Create auto-start script
+cat > ~/.termux/boot/start-btc.sh << 'EOF'
+#!/data/data/com.termux/files/usr/bin/bash
+termux-wake-lock
+cd ~/btc-trend-predictor
+source venv/bin/activate
+python app.py &
+EOF
+
+chmod +x ~/.termux/boot/start-btc.sh
+```
+
+### Expose to the Internet with Cloudflare Tunnel (Free)
+
+If you want your phone-hosted dashboard accessible from anywhere:
+
+```bash
+# Install cloudflared
+pkg install cloudflared -y
+
+# Create a quick tunnel (no account needed)
+cloudflared tunnel --url http://localhost:5000
+```
+
+This gives you a public URL like `https://random-name.trycloudflare.com` — free, no port forwarding needed.
+
+> [!IMPORTANT]
+> For a permanent subdomain, create a free Cloudflare account and set up a named tunnel.
+
+### Troubleshooting Termux
+
+| Issue | Fix |
+|---|---|
+| `numpy` fails to install | `pkg install python-numpy` (Termux has a prebuilt package) |
+| `lxml` fails to build | `pkg install libxml2 libxslt` first, then retry pip install |
+| `pip install` is slow | Use `pip install --prefer-binary` |
+| App crashes on low memory | Add `--workers 1 --threads 1` to gunicorn, or just use `python app.py` |
+| Can't reach from other devices | Check firewall, ensure same WiFi, verify IP with `ifconfig` |
+
+---
+
+## Quick Comparison
+
+| Platform | Cost | Always On | Cold Start | Difficulty |
+|---|---|---|---|---|
+| **Render** | Free | ❌ (spins down) | ~30s | ⭐ Easy |
+| **Koyeb** | Free | ✅ | None | ⭐ Easy |
+| **Railway** | Free trial | ✅ | None | ⭐ Easy |
+| **PythonAnywhere** | Free | ✅ | None | ⭐⭐ Medium |
+| **Termux** | Free | ✅ (your phone) | None | ⭐⭐⭐ Advanced |
+
+> [!TIP]
+> **My recommendation**: Use **Render** or **Koyeb** for easy cloud hosting. Use **Termux** if you want to self-host for free with no limits and don't mind keeping your phone plugged in.
