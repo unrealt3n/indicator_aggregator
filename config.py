@@ -10,10 +10,14 @@ BINANCE_BASE_URL = "https://api.binance.com"
 BINANCE_FUTURES_URL = "https://fapi.binance.com"
 SYMBOL = "BTCUSDT"
 
+# Fallback APIs (used when Binance is geo-blocked)
+BYBIT_BASE_URL = "https://api.bybit.com"
+COINGECKO_BASE_URL = "https://api.coingecko.com/api/v3"
+
 FEAR_GREED_URL = "https://api.alternative.me/fng/"
 
 # FRED API — Free key from https://fred.stlouisfed.org/
-FRED_API_KEY = "771366b57915c7813f18cfaa1dc26158 "  # Replace with your key
+FRED_API_KEY = "771366b57915c7813f18cfaa1dc26158"  # Replace with your key
 FRED_BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
 FRED_M2_SERIES = "M2SL"
 

@@ -1,6 +1,8 @@
 """
-Web scraper client — ETF flows (Farside), Liquidation data (CoinGlass).
-These are fragile and degrade gracefully.
+Web scraper client — ETF flows (Farside), Liquidation data.
+
+ETF flows: Farside scraping with graceful degradation (often blocked on servers).
+Liquidation proxy: Primary Binance futures, fallback to Bybit public API.
 """
 
 import logging
@@ -18,12 +20,23 @@ HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
+# HTTP status codes indicating geo-block or IP ban
+_BLOCK_CODES = {451, 403, 418}
+
+
+def _is_blocked(e: Exception) -> bool:
+    """Check if an exception indicates geo-blocking or access denial."""
+    if isinstance(e, requests.exceptions.HTTPError) and e.response is not None:
+        return e.response.status_code in _BLOCK_CODES
+    return any(str(code) in str(e) for code in _BLOCK_CODES)
+
 
 class ScraperClient:
 
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
+        self._binance_futures_blocked = False
 
     # ── ETF Flows (Farside Investors) ────────────────────────────────────
 
@@ -74,82 +87,145 @@ class ScraperClient:
             logger.error(f"ETF flows scraping error: {e}")
             return {"available": False}
 
-    # ── Liquidation Data (Binance Public Endpoints) ────────────────────────
+    # ── Liquidation Data (Primary: Binance, Fallback: Bybit) ─────────────
 
     def get_liquidation_data(self) -> dict:
         """
-        Approximates liquidation pressure using two Binance public endpoints:
-        1. takerLongShortRatio — buy vs sell taker volume (aggressor side)
-        2. topLongShortPositionRatio — top trader positioning skew
+        Approximates liquidation pressure using taker volume ratio and
+        top trader positioning data.
 
-        These are reliable proxies for where liquidation clusters exist:
-        - Heavy long positioning → liquidation clusters below price
-        - Heavy short positioning → liquidation clusters above price
+        Primary: Binance public endpoints.
+        Fallback: Bybit public endpoints (when Binance is geo-blocked).
         """
         cache_key = "liquidation_data"
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
+        # --- Primary: Binance ---
+        if not self._binance_futures_blocked:
+            try:
+                result = self._binance_liquidation_data()
+                if result.get("available"):
+                    cache.set(cache_key, result, ttl=600)
+                    return result
+            except Exception as e:
+                if _is_blocked(e):
+                    logger.warning("Binance futures blocked (liquidation) — switching to Bybit")
+                    self._binance_futures_blocked = True
+                else:
+                    logger.error(f"Liquidation data error: {e}")
+
+        # --- Fallback: Bybit ---
         try:
-            base = "https://fapi.binance.com/futures/data"
-
-            # 1. Taker buy/sell ratio (recent 4h of hourly data)
-            taker_resp = self.session.get(
-                f"{base}/takerlongshortRatio",
-                params={"symbol": "BTCUSDT", "period": "1h", "limit": 4},
-                timeout=10,
-            )
-            taker_resp.raise_for_status()
-            taker_data = taker_resp.json()
-
-            # 2. Top trader position ratio (recent 4h)
-            pos_resp = self.session.get(
-                f"{base}/topLongShortPositionRatio",
-                params={"symbol": "BTCUSDT", "period": "1h", "limit": 4},
-                timeout=10,
-            )
-            pos_resp.raise_for_status()
-            pos_data = pos_resp.json()
-
-            # Analyze taker ratio: buySellRatio > 1 = more buys (bullish pressure)
-            avg_taker = sum(float(d["buySellRatio"]) for d in taker_data) / len(taker_data) if taker_data else 1.0
-
-            # Analyze top trader positioning: longShortRatio < 1 = more shorts
-            avg_position = sum(float(d["longShortRatio"]) for d in pos_data) / len(pos_data) if pos_data else 1.0
-            long_pct = float(pos_data[-1]["longAccount"]) * 100 if pos_data else 50
-            short_pct = float(pos_data[-1]["shortAccount"]) * 100 if pos_data else 50
-
-            # Determine liquidation bias:
-            # If heavy longs → liquidation clusters below (support cushion = bullish)
-            # If heavy shorts → liquidation clusters above (resistance magnet = bullish squeeze potential)
-            if avg_position < 0.8:  # Short-heavy
-                dominant = "shorts"
-                bias = "below"      # Price may squeeze up to liquidate shorts above
-            elif avg_position > 1.3:  # Long-heavy
-                dominant = "longs"
-                bias = "above"      # Clusters above means longs at risk
-            else:
-                dominant = "balanced"
-                bias = "balanced"
-
-            result = {
-                "available": True,
-                "taker_ratio": round(avg_taker, 4),
-                "position_ratio": round(avg_position, 4),
-                "long_pct": round(long_pct, 1),
-                "short_pct": round(short_pct, 1),
-                "dominant_side": dominant,
-                "bias": bias,
-            }
-            cache.set(cache_key, result, ttl=600)
-            return result
-
+            result = self._bybit_liquidation_data()
+            if result.get("available"):
+                cache.set(cache_key, result, ttl=600)
+                return result
         except Exception as e:
-            logger.error(f"Liquidation data error: {e}")
+            logger.error(f"Bybit liquidation fallback error: {e}")
 
         return {
             "available": False,
             "dominant_side": "balanced",
             "bias": "balanced",
+        }
+
+    def _binance_liquidation_data(self):
+        base = "https://fapi.binance.com/futures/data"
+
+        # 1. Taker buy/sell ratio (recent 4h of hourly data)
+        taker_resp = self.session.get(
+            f"{base}/takerlongshortRatio",
+            params={"symbol": "BTCUSDT", "period": "1h", "limit": 4},
+            timeout=10,
+        )
+        taker_resp.raise_for_status()
+        taker_data = taker_resp.json()
+
+        # 2. Top trader position ratio (recent 4h)
+        pos_resp = self.session.get(
+            f"{base}/topLongShortPositionRatio",
+            params={"symbol": "BTCUSDT", "period": "1h", "limit": 4},
+            timeout=10,
+        )
+        pos_resp.raise_for_status()
+        pos_data = pos_resp.json()
+
+        return self._analyze_liquidation(taker_data, pos_data)
+
+    def _bybit_liquidation_data(self):
+        bybit = config.BYBIT_BASE_URL
+
+        # Bybit account ratio (similar to Binance top trader ratio)
+        ratio_resp = self.session.get(
+            f"{bybit}/v5/market/account-ratio",
+            params={"category": "linear", "symbol": "BTCUSDT", "period": "1h", "limit": 4},
+            timeout=10,
+        )
+        ratio_resp.raise_for_status()
+        ratio_data = ratio_resp.json()
+
+        if ratio_data.get("retCode") != 0:
+            raise RuntimeError(f"Bybit API error: {ratio_data.get('retMsg')}")
+
+        entries = ratio_data["result"]["list"]
+        if not entries:
+            return {"available": False, "dominant_side": "balanced", "bias": "balanced"}
+
+        # Convert Bybit format to match the analysis function's expected input
+        # Bybit: buyRatio/sellRatio → simulate taker data and position data
+        taker_data = []
+        pos_data = []
+        for entry in entries:
+            buy_r = float(entry["buyRatio"])
+            sell_r = float(entry["sellRatio"])
+            # Simulate Binance taker format
+            taker_data.append({"buySellRatio": str(buy_r / sell_r if sell_r > 0 else 1.0)})
+            # Simulate Binance position format
+            pos_data.append({
+                "longShortRatio": str(buy_r / sell_r if sell_r > 0 else 1.0),
+                "longAccount": str(buy_r),
+                "shortAccount": str(sell_r),
+            })
+
+        return self._analyze_liquidation(taker_data, pos_data)
+
+    def _analyze_liquidation(self, taker_data, pos_data):
+        """Shared analysis logic for both Binance and Bybit data."""
+        # Analyze taker ratio: buySellRatio > 1 = more buys (bullish pressure)
+        avg_taker = (
+            sum(float(d["buySellRatio"]) for d in taker_data) / len(taker_data)
+            if taker_data else 1.0
+        )
+
+        # Analyze top trader positioning: longShortRatio < 1 = more shorts
+        avg_position = (
+            sum(float(d["longShortRatio"]) for d in pos_data) / len(pos_data)
+            if pos_data else 1.0
+        )
+        long_pct = float(pos_data[-1]["longAccount"]) * 100 if pos_data else 50
+        short_pct = float(pos_data[-1]["shortAccount"]) * 100 if pos_data else 50
+
+        # Determine liquidation bias:
+        # If heavy longs → liquidation clusters below (support cushion = bullish)
+        # If heavy shorts → liquidation clusters above (resistance magnet = bullish squeeze potential)
+        if avg_position < 0.8:  # Short-heavy
+            dominant = "shorts"
+            bias = "below"      # Price may squeeze up to liquidate shorts above
+        elif avg_position > 1.3:  # Long-heavy
+            dominant = "longs"
+            bias = "above"      # Clusters above means longs at risk
+        else:
+            dominant = "balanced"
+            bias = "balanced"
+
+        return {
+            "available": True,
+            "taker_ratio": round(avg_taker, 4),
+            "position_ratio": round(avg_position, 4),
+            "long_pct": round(long_pct, 1),
+            "short_pct": round(short_pct, 1),
+            "dominant_side": dominant,
+            "bias": bias,
         }

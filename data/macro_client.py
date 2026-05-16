@@ -1,8 +1,12 @@
 """
 Macro data client — DXY, S&P 500 (yfinance), M2 (FRED), Fear & Greed (Alternative.me).
+
+yfinance is rate-limited aggressively on cloud servers; this module uses
+longer cache TTLs and retry-with-backoff to handle that gracefully.
 """
 
 import logging
+import time
 from typing import Optional
 
 import requests
@@ -11,6 +15,37 @@ import config
 from data.cache import cache
 
 logger = logging.getLogger(__name__)
+
+# How many times to retry yfinance before giving up
+_YF_MAX_RETRIES = 2
+_YF_RETRY_DELAY = 3  # seconds
+
+
+def _yfinance_with_retry(ticker_symbol: str, period: str = "5d"):
+    """Fetch yfinance history with retry on rate-limit."""
+    import yfinance as yf
+
+    last_err = None
+    for attempt in range(_YF_MAX_RETRIES + 1):
+        try:
+            ticker = yf.Ticker(ticker_symbol)
+            hist = ticker.history(period=period)
+            return hist
+        except Exception as e:
+            last_err = e
+            err_str = str(e).lower()
+            if "rate" in err_str or "too many" in err_str or "429" in err_str:
+                if attempt < _YF_MAX_RETRIES:
+                    wait = _YF_RETRY_DELAY * (attempt + 1)
+                    logger.warning(
+                        f"yfinance rate-limited for {ticker_symbol}, "
+                        f"retrying in {wait}s (attempt {attempt + 1}/{_YF_MAX_RETRIES})"
+                    )
+                    time.sleep(wait)
+                    continue
+            raise
+
+    raise last_err  # type: ignore[misc]
 
 
 class MacroClient:
@@ -26,9 +61,7 @@ class MacroClient:
         if cached is not None:
             return cached
         try:
-            import yfinance as yf
-            ticker = yf.Ticker(config.YAHOO_DXY)
-            hist = ticker.history(period="5d")
+            hist = _yfinance_with_retry(config.YAHOO_DXY)
             if hist.empty:
                 return {"direction": "flat", "change_pct": 0}
             closes = hist["Close"].tolist()
@@ -38,7 +71,7 @@ class MacroClient:
             else:
                 change, direction = 0, "flat"
             result = {"direction": direction, "change_pct": round(change, 2), "last": round(closes[-1], 2)}
-            cache.set(cache_key, result, ttl=600)
+            cache.set(cache_key, result, ttl=3600)  # 1 hour — macro barely moves
             return result
         except Exception as e:
             logger.error(f"DXY error: {e}")
@@ -52,9 +85,10 @@ class MacroClient:
         if cached is not None:
             return cached
         try:
-            import yfinance as yf
-            ticker = yf.Ticker(config.YAHOO_SP500)
-            hist = ticker.history(period="5d")
+            # Small delay to avoid triggering yfinance rate-limit when
+            # called right after get_dxy() on the same request cycle.
+            time.sleep(1)
+            hist = _yfinance_with_retry(config.YAHOO_SP500)
             if hist.empty:
                 return {"direction": "flat", "change_pct": 0}
             closes = hist["Close"].tolist()
@@ -64,7 +98,7 @@ class MacroClient:
             else:
                 change, direction = 0, "flat"
             result = {"direction": direction, "change_pct": round(change, 2), "last": round(closes[-1], 2)}
-            cache.set(cache_key, result, ttl=600)
+            cache.set(cache_key, result, ttl=3600)  # 1 hour
             return result
         except Exception as e:
             logger.error(f"S&P 500 error: {e}")
